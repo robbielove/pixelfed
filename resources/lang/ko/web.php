@@ -154,7 +154,7 @@ return [
 		'confirmReportText' => '이 게시물을 제보할까요?',
 		'reportSent' => '신고 발송!',
 		'reportSentText' => '제보를 잘 수령하였습니다.',
-		'reportSentError' => 'There was an issue reporting this post.',
+		'reportSentError' => '.',
 
 		'modAddCWConfirm' => '이 게시물이 내용 경고를 붙일까요?',
 		'modCWSuccess' => '내용경고를 붙임',
