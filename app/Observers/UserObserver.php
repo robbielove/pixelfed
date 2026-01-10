@@ -7,7 +7,6 @@ use App\Jobs\AvatarPipeline\CreateAvatar;
 use App\Jobs\FollowPipeline\FollowPipeline;
 use App\Models\DefaultDomainBlock;
 use App\Models\UserDomainBlock;
-use App\Models\UserNotify;
 use App\Profile;
 use App\Services\FollowerService;
 use App\User;
@@ -95,10 +94,10 @@ class UserObserver
                 $user->profile_id = $profile->id;
                 $user->save();
 
-                UserNotify::updateOrCreate([
-                    'profile_id' => $profile->id,
-                    'user_id' => $user->id,
-                ]);
+                // UserNotify::updateOrCreate([
+                //     'profile_id' => $profile->id,
+                //     'user_id' => $user->id,
+                // ]);
 
                 CreateAvatar::dispatch($profile);
             });
