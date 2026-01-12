@@ -117,8 +117,6 @@ class StatusLocalUpdateActivityPubDeliverPipeline implements ShouldQueue
                             CURLOPT_HTTPHEADER => $headers,
                             CURLOPT_POSTFIELDS => $payload,
                             CURLOPT_HEADER => true,
-                            CURLOPT_SSL_VERIFYPEER => true,
-                            CURLOPT_SSL_VERIFYHOST => false,
                         ],
                     ]);
                 };
