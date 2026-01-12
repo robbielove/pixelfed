@@ -80,10 +80,31 @@ class CustomEmojiService
             }
 
             $ext = '.'.last(explode('/', $json['icon']['mediaType']));
-            $dest = storage_path('app/public/emoji/').$emoji->id.$ext;
-            copy($json['icon']['url'], $dest);
-            $emoji->media_path = 'emoji/'.$emoji->id.$ext;
-            $emoji->save();
+            $mediaPath = 'emoji/'.$emoji->id.$ext;
+            
+            try {
+                $response = Http::timeout(30)
+                    ->withOptions(['max_redirects' => 0])
+                    ->get($json['icon']['url']);
+            
+                if (!$response->successful()) {
+                    return;
+                }
+            
+                // Validate actual content type from response
+                $contentType = $response->header('Content-Type');
+                if (!in_array($contentType, ['image/jpeg', 'image/png', 'image/jpg'])) {
+                    return;
+                }
+            
+                Storage::put('public/'.$mediaPath, $response->body());
+            
+                $emoji->media_path = $mediaPath;
+                $emoji->save();
+            } catch (\Exception $e) {
+                // Download failed
+                return;
+            }
 
             $name = str_replace(':', '', $json['name']);
             Cache::forget('pf:custom_emoji');
