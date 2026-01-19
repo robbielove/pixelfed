@@ -252,6 +252,10 @@ class Inbox
         $to = isset($activity['to']) ? $activity['to'] : [];
         $cc = isset($activity['cc']) ? $activity['cc'] : [];
 
+        // JSON-LD allows for arrays with one element to be represented with just the value alone
+        if (is_string($to)) $to = [$to];
+        if (is_string($cc)) $cc = [$cc];
+
         if ($activity['type'] == 'Question') {
             // $this->handlePollCreate();
 
