@@ -191,7 +191,7 @@ class PublicApiController extends Controller
                 if (! $user) {
                     abort(403);
                 } else {
-                    $follows = FollowerService::follows($profile->id, $user->profile_id);
+                    $follows = FollowerService::follows($user->profile_id, $profile->id);
                     if ($follows == false && $profile->id !== $user->profile_id && $user->is_admin == false) {
                         abort(404);
                     }

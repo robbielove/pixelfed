@@ -201,6 +201,7 @@ class PortfolioController extends Controller
             return DB::table('media')
                 ->whereProfileId($id)
                 ->whereNotNull('status_id')
+                ->selectRaw('status_id, MAX(id) as id')
                 ->groupBy('status_id')
                 ->orderByDesc('id')
                 ->take(50)
