@@ -2576,11 +2576,10 @@ class ApiV1Controller extends Controller
         $pid = $request->user()->profile_id;
         $userSettings = $request->user()->settings;
         $other = $userSettings->other ?? [];
-        $userEnableReblogs = $other['enable_reblogs'] ?? false;
-        $photoReblogsOnly = $other['photo_reblogs_only'] ?? false;
-        
+
+        $userEnableReblogs = data_get($other, 'enable_reblogs', false);
         $includeReblogs = $request->filled('include_reblogs') ? $request->boolean('include_reblogs') : $userEnableReblogs;
-        
+
         $nullFields = $includeReblogs ?
         ['in_reply_to_id'] :
         ['in_reply_to_id', 'reblog_of_id'];
