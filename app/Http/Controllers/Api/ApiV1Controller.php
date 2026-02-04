@@ -230,6 +230,52 @@ class ApiV1Controller extends Controller
     }
 
     /**
+     * GET /api/v1/accounts/lookup
+     *
+     * @param  string  $acct
+     * @return \App\Transformer\Api\AccountTransformer
+     */
+    public function accountLookupById(Request $request)
+    {
+        $request->validate([
+            'acct' => 'required|string|min:3|max:100',
+        ]);
+
+        $acct = $request->acct;
+
+        if (str_contains($acct, '@')) {
+            $count = mb_substr_count($acct, '@');
+
+            if ($count === 1) {
+                if (str_starts_with($acct, '@')) {
+                    $acct = substr($acct, 1);
+                } else {
+                    $acct = '@'.$acct;
+                }
+            }
+            if ($count > 2) {
+                return $this->json(['error' => 'Record not found'], 400);
+            }
+        }
+        $profile = Profile::whereUsername($acct)->first();
+
+        if (! $profile) {
+            return $this->json(['error' => 'Record not found'], 400);
+        }
+
+        $res = $request->has(self::PF_API_ENTITY_KEY) ? AccountService::get($profile->id, true) : AccountService::getMastodon($profile->id, true);
+        if (! $res) {
+            return response()->json(['error' => 'Record not found'], 404);
+        }
+        if ($res && strpos($res['acct'], '@') != -1) {
+            $domain = parse_url($res['url'], PHP_URL_HOST);
+            abort_if(in_array($domain, InstanceService::getBannedDomains()), 404);
+        }
+
+        return $this->json($res);
+    }
+
+    /**
      * PATCH /api/v1/accounts/update_credentials
      *
      * @return \App\Transformer\Api\AccountTransformer
