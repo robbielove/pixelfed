@@ -103,6 +103,10 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perHour(10)->by($request->ip());
         });
 
+        RateLimiter::for('account-lookup', function (Request $request) {
+            return Limit::perDay(50)->by($request->ip());
+        });
+
         // Model::preventLazyLoading(true);
     }
 
