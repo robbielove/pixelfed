@@ -232,7 +232,7 @@ class ApiV1Controller extends Controller
     /**
      * GET /api/v1/accounts/lookup
      *
-     * @param  int  $id
+     * @param  string  $acct
      * @return \App\Transformer\Api\AccountTransformer
      */
     public function accountLookupById(Request $request)
