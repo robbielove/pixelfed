@@ -2574,7 +2574,13 @@ class ApiV1Controller extends Controller
             $limit = 40;
         }
         $pid = $request->user()->profile_id;
-        $includeReblogs = $request->filled('include_reblogs') ? $request->boolean('include_reblogs') : false;
+        $userSettings = $request->user()->settings;
+        $other = $userSettings->other ?? [];
+        $userEnableReblogs = $other['enable_reblogs'] ?? false;
+        $photoReblogsOnly = $other['photo_reblogs_only'] ?? false;
+        
+        $includeReblogs = $request->filled('include_reblogs') ? $request->boolean('include_reblogs') : $userEnableReblogs;
+        
         $nullFields = $includeReblogs ?
         ['in_reply_to_id'] :
         ['in_reply_to_id', 'reblog_of_id'];
