@@ -498,10 +498,18 @@ class ApiV1Controller extends Controller
         $pid = $request->user()->profile_id;
         $this->validate($request, [
             'limit' => 'sometimes|integer|min:1',
+            'max_id' => 'nullable|integer|min:0|max:'.PHP_INT_MAX,
+            'min_id' => 'nullable|integer|min:0|max:'.PHP_INT_MAX,
         ]);
         $limit = $request->input('limit', 10);
         if ($limit > 80) {
             $limit = 80;
+        }
+        $max_id = $request->max_id;
+        $min_id = $request->min_id;
+
+        if (! $max_id && ! $min_id) {
+            $min_id = 1;
         }
         $napi = $request->has(self::PF_API_ENTITY_KEY);
 
@@ -528,10 +536,13 @@ class ApiV1Controller extends Controller
                 }
             }
         }
+        $dir = $min_id ? '>' : '<';
+        $id = $min_id ?? $max_id;
         if ($request->has('page')) {
             $res = DB::table('followers')
                 ->select('id', 'profile_id', 'following_id')
                 ->whereFollowingId($account['id'])
+                ->where('id', $dir, $id)
                 ->orderByDesc('id')
                 ->simplePaginate($limit)
                 ->map(function ($follower) use ($napi) {
@@ -549,6 +560,7 @@ class ApiV1Controller extends Controller
         $paginator = DB::table('followers')
             ->select('id', 'profile_id', 'following_id')
             ->whereFollowingId($account['id'])
+            ->where('id', $dir, $id)
             ->orderByDesc('id')
             ->cursorPaginate($limit)
             ->withQueryString();
@@ -600,11 +612,20 @@ class ApiV1Controller extends Controller
         $pid = $request->user()->profile_id;
         $this->validate($request, [
             'limit' => 'sometimes|integer|min:1',
+            'max_id' => 'nullable|integer|min:0|max:'.PHP_INT_MAX,
+            'min_id' => 'nullable|integer|min:0|max:'.PHP_INT_MAX,
         ]);
         $limit = $request->input('limit', 10);
         if ($limit > 80) {
             $limit = 80;
         }
+        $max_id = $request->max_id;
+        $min_id = $request->min_id;
+
+        if (! $max_id && ! $min_id) {
+            $min_id = 1;
+        }
+
         $napi = $request->has(self::PF_API_ENTITY_KEY);
 
         if ($account && strpos($account['acct'], '@') != -1) {
@@ -631,10 +652,13 @@ class ApiV1Controller extends Controller
             }
         }
 
+        $dir = $min_id ? '>' : '<';
+        $id = $min_id ?? $max_id;
         if ($request->has('page')) {
             $res = DB::table('followers')
                 ->select('id', 'profile_id', 'following_id')
                 ->whereProfileId($account['id'])
+                ->where('id', $dir, $id)
                 ->orderByDesc('id')
                 ->simplePaginate($limit)
                 ->map(function ($follower) use ($napi) {
@@ -652,6 +676,7 @@ class ApiV1Controller extends Controller
         $paginator = DB::table('followers')
             ->select('id', 'profile_id', 'following_id')
             ->whereProfileId($account['id'])
+            ->where('id', $dir, $id)
             ->orderByDesc('id')
             ->cursorPaginate($limit)
             ->withQueryString();
