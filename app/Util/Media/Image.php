@@ -292,8 +292,6 @@ class Image
             }
 
         } catch (\Exception $e) {
-            $media->processed_at = now();
-            $media->save();
             if (config('app.dev_log')) {
                 Log::info('MediaResizeException: '.$e->getMessage().' | Could not process media id: '.$media->id);
             }
