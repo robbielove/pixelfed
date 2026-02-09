@@ -116,8 +116,7 @@ class FeedInsertRemotePipeline implements ShouldBeUniqueUntilProcessing, ShouldQ
         $filters = UserFilter::whereFilterableType('App\Profile')
             ->whereFilterableId($status['account']['id'])
             ->whereIn('filter_type', ['mute', 'block'])
-            ->join('profiles', 'user_filters.user_id', '=', 'profiles.user_id')
-            ->pluck('profiles.id')
+            ->pluck('user_id')
             ->toArray();
 
         if ($filters && count($filters)) {
