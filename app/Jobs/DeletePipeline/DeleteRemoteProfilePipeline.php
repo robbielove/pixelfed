@@ -134,7 +134,7 @@ class DeleteRemoteProfilePipeline implements ShouldQueue
             });
 
         // Delete reports
-        Report::whereProfileId($profile->id)->orWhere('reported_profile_id')->forceDelete();
+        Report::whereProfileId($pid)->orWhere('reported_profile_id', $pid)->forceDelete();
 
         // Delete profile
         Profile::findOrFail($profile->id)->delete();
