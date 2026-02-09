@@ -9,6 +9,7 @@ use App\Services\StatusService;
 use App\Util\Media\Blurhash;
 use Cache;
 use FFMpeg;
+use Log;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -107,7 +108,11 @@ class VideoThumbnail implements ShouldBeUniqueUntilProcessing, ShouldQueue
                 VideoHlsPipeline::dispatch($media)->onQueue('mmo');
             }
         } catch (\Exception $e) {
+            if (config('app.dev_log')) {
+                Log::error('Video thumbnail generation failed: '.$e->getMessage());
+            }
 
+            throw $e;
         }
 
         if ($media->status_id) {
