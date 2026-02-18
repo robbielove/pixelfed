@@ -69,6 +69,12 @@ class BaseApiController extends Controller
             NotificationWarmUserCache::dispatch($pid);
         }
 
+        $res = collect($res)
+            ->filter(function ($n) {
+                return isset($n['account'], $n['account']['id']);
+            })
+            ->values();
+
         return response()->json($res);
     }
 
