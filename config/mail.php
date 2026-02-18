@@ -45,6 +45,7 @@ return [
             'timeout' => null,
             'local_domain' => env('MAIL_EHLO_DOMAIN'),
             'verify_peer' => env('MAIL_SMTP_VERIFY_PEER', true),
+            'auto_tls' => env('MAIL_AUTO_TLS', true),
         ],
 
         'ses' => [
