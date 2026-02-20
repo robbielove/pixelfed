@@ -1,7 +1,8 @@
 # Release Notes
 
 ## [Unreleased](https://github.com/pixelfed/pixelfed/compare/v0.12.5...dev)
--  ([](https://github.com/pixelfed/pixelfed/commit/))
+- Update mail.php to allow SMTP to bypass STARTTLS on email server with broken TLS ([b5ce7a8](https://github.com/pixelfed/pixelfed/commit/b5ce7a8))
+- Update passport. Fixes #6480 ([a78a02228](https://github.com/pixelfed/pixelfed/commit/a78a02228))
 -  ([](https://github.com/pixelfed/pixelfed/commit/))
 
 ## [v0.12.7 (2026-02-17)](https://github.com/pixelfed/pixelfed/compare/v0.12.7...dev)
