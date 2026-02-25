@@ -181,7 +181,7 @@ class StatusDelete implements ShouldQueue
         $profile = $status->profile()->withTrashed()->first();
 
         if (! $profile) {
-            return $this->unlinkRemoveMedia($status);
+            return
         }
 
         $audience = $status->profile->getAudienceInbox();
