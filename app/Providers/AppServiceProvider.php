@@ -37,6 +37,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Passport\Passport;
 use Laravel\Pulse\Facades\Pulse;
 use URL;
 
@@ -52,6 +53,9 @@ class AppServiceProvider extends ServiceProvider
         if (config('instance.force_https_urls', true)) {
             URL::forceScheme('https');
         }
+
+        Passport::$clientUuids = false;
+        Passport::authorizationView('auth.oauth.authorize');
 
         Schema::defaultStringLength(191);
         Paginator::useBootstrap();
