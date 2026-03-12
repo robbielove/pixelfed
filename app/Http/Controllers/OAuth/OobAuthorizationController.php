@@ -5,6 +5,7 @@ namespace App\Http\Controllers\OAuth;
 use Illuminate\Http\Request;
 use Laravel\Passport\Http\Controllers\ApproveAuthorizationController;
 use League\OAuth2\Server\Exception\OAuthServerException;
+use League\OAuth2\Server\RequestTypes\AuthorizationRequest;
 use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -12,8 +13,6 @@ class OobAuthorizationController extends ApproveAuthorizationController
 {
     /**
      * Approve the authorization request.
-     *
-     * @return \Illuminate\Http\Response
      */
     public function approve(Request $request, ResponseInterface $psrResponse): Response
     {
@@ -39,7 +38,7 @@ class OobAuthorizationController extends ApproveAuthorizationController
     /**
      * Check if the request is an out-of-band OAuth request.
      *
-     * @param  \League\OAuth2\Server\RequestTypes\AuthorizationRequest  $authRequest
+     * @param  AuthorizationRequest  $authRequest
      * @return bool
      */
     protected function isOutOfBandRequest($authRequest)
@@ -50,10 +49,10 @@ class OobAuthorizationController extends ApproveAuthorizationController
     /**
      * Extract the authorization code from the PSR-7 response.
      *
-     * @param  \Psr\Http\Message\ResponseInterface  $response
+     * @param  ResponseInterface  $response
      * @return string
      *
-     * @throws \League\OAuth2\Server\Exception\OAuthServerException
+     * @throws OAuthServerException
      */
     protected function extractAuthorizationCode($response)
     {
