@@ -111,6 +111,30 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perDay(50)->by($request->ip());
         });
 
+        Passport::tokensExpireIn(now()->addDays(config('instance.oauth.token_expiration', 356)));
+        Passport::refreshTokensExpireIn(now()->addDays(config('instance.oauth.refresh_expiration', 400)));
+        Passport::enableImplicitGrant();
+        if (config('instance.oauth.pat.enabled')) {
+            Passport::personalAccessClientId(config('instance.oauth.pat.id'));
+        }
+
+        Passport::tokensCan([
+            'read' => 'Full read access to your account',
+            'write' => 'Full write access to your account',
+            'follow' => 'Ability to follow other profiles',
+            'admin:read' => 'Read all data on the server',
+            'admin:read:domain_blocks' => 'Read sensitive information of all domain blocks',
+            'admin:write' => 'Modify all data on the server',
+            'admin:write:domain_blocks' => 'Perform moderation actions on domain blocks',
+            'push' => 'Receive your push notifications',
+        ]);
+
+        Passport::setDefaultScope([
+            'read',
+            'write',
+            'follow',
+        ]);
+
         // Model::preventLazyLoading(true);
     }
 
@@ -121,6 +145,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register()
     {
+        Passport::ignoreRoutes();
+
         $this->app->bind(UserOidcService::class, function () {
             return UserOidcService::build();
         });
