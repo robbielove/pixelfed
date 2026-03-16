@@ -6,6 +6,7 @@ use App\Avatar;
 use App\Follower;
 use App\HashtagFollow;
 use App\Like;
+use App\Models\OAuthToken;
 use App\ModLog;
 use App\Notification;
 use App\Observers\AvatarObserver;
@@ -111,6 +112,7 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perDay(50)->by($request->ip());
         });
 
+        Passport::useTokenModel(OAuthToken::class);
         Passport::tokensExpireIn(now()->addDays(config('instance.oauth.token_expiration', 356)));
         Passport::refreshTokensExpireIn(now()->addDays(config('instance.oauth.refresh_expiration', 400)));
         Passport::enableImplicitGrant();
