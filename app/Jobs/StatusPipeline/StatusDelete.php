@@ -77,7 +77,7 @@ class StatusDelete implements ShouldQueue
             return;
         }
 
-        $profile = $status->profile;
+        $profile = $status->profile()->withTrashed()->first();
 
         // Verify profile exists
         if (! $profile) {
@@ -178,7 +178,7 @@ class StatusDelete implements ShouldQueue
 
     public function fanoutDelete($status)
     {
-        $profile = $status->profile;
+        $profile = $status->profile()->withTrashed()->first();
 
         if (! $profile) {
             return;
