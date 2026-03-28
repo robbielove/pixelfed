@@ -5,8 +5,8 @@ namespace App\Util\ActivityPub;
 use App\Models\InstanceActor;
 use App\Profile;
 use Artisan;
-use Cache;
 use DateTime;
+use Illuminate\Support\Facades\Cache;
 
 class HttpSignature
 {
@@ -91,6 +91,41 @@ class HttpSignature
         $key = openssl_pkey_get_private($privateKey);
         openssl_sign($stringToSign, $signature, $key, OPENSSL_ALGO_SHA256);
         $signature = base64_encode($signature);
+        $signatureHeader = 'keyId="'.$keyId.'",headers="'.$signedHeaders.'",algorithm="rsa-sha256",signature="'.$signature.'"';
+        unset($headers['(request-target)']);
+        $headers['Signature'] = $signatureHeader;
+
+        return $headers;
+    }
+
+    public static function instanceActorSignWithDigest(
+        string $url,
+        string $digest,
+        array $addlHeaders = [],
+        string $method = 'post'
+    ): array {
+        $keyId = config('app.url').'/i/actor#main-key';
+        $privateKey = Cache::rememberForever(InstanceActor::PKI_PRIVATE, function () {
+            $instance = InstanceActor::first()
+                ?: tap(Artisan::call('instance:actor'), fn () => sleep(10)) && InstanceActor::first();
+            if (! $instance) {
+                throw new \Exception('Failed to generate or retrieve InstanceActor.');
+            }
+
+            return $instance->private_key;
+        });
+
+        abort_if(! $privateKey, 400, 'Missing instance actor key, please run php artisan instance:actor');
+
+        $headers = self::_headersToSign($url, $digest, $method);
+        $headers = array_merge($headers, $addlHeaders);
+        $stringToSign = self::_headersToSigningString($headers);
+        $signedHeaders = implode(' ', array_map('strtolower', array_keys($headers)));
+
+        $key = openssl_pkey_get_private($privateKey);
+        openssl_sign($stringToSign, $signature, $key, OPENSSL_ALGO_SHA256);
+        $signature = base64_encode($signature);
+
         $signatureHeader = 'keyId="'.$keyId.'",headers="'.$signedHeaders.'",algorithm="rsa-sha256",signature="'.$signature.'"';
         unset($headers['(request-target)']);
         $headers['Signature'] = $signatureHeader;
