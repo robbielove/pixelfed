@@ -22,6 +22,7 @@ class UserAccountDelete extends Command
         {--concurrency=500 : Number of concurrent deliveries}
         {--chunk=500 : Number of inbox rows to process per DB chunk}
         {--attempts=2 : Max attempts for retryable failures}
+        {--target= : Send to a single inbox URL for debugging}
         {--dry-run : Build payload and audience, but do not send}';
 
     protected $description = 'Federate Account Deletion';
@@ -110,6 +111,10 @@ class UserAccountDelete extends Command
             $this->line($payload);
 
             return self::SUCCESS;
+        }
+
+        if ($target = $this->option('target')) {
+            return $this->sendDebug($target, $payload, $digest);
         }
 
         if ($totalTargets === 0) {
@@ -279,19 +284,15 @@ class UserAccountDelete extends Command
         string $payload,
         int $concurrency
     ): array {
-        $version = config('pixelfed.version');
-        $appUrl = config('app.url');
-        $userAgent = "(Pixelfed/{$version}; +{$appUrl})";
 
         $delivered = [];
         $httpFailed = [];
         $retryable = collect();
 
-        $requests = function () use ($client, $urls, $digest, $payload, $userAgent) {
+        $requests = function () use ($client, $urls, $digest, $payload) {
             foreach ($urls as $url) {
                 $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
                     'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-                    'User-Agent' => $userAgent,
                 ]);
 
                 yield function () use ($client, $url, $headers, $payload) {
@@ -344,6 +345,65 @@ class UserAccountDelete extends Command
             'http_failed' => $httpFailed,
             'retryable' => $retryable,
         ];
+    }
+
+    protected function sendDebug(string $url, string $payload, string $digest): int
+    {
+        $version = config('pixelfed.version');
+        $appUrl = config('app.url');
+        $userAgent = "(Pixelfed/{$version}; +{$appUrl})";
+
+        $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
+            'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
+        ]);
+
+        $this->info('Target: '.$url);
+        $this->newLine();
+
+        $this->info('Request headers:');
+        foreach ($headers as $key => $value) {
+            $this->line("  {$key}: {$value}");
+        }
+        $this->newLine();
+
+        $this->info('Payload:');
+        $this->line($payload);
+        $this->newLine();
+
+        $client = new Client([
+            'timeout' => 15.0,
+            'connect_timeout' => 5.0,
+            'http_errors' => false,
+            'allow_redirects' => false,
+        ]);
+
+        try {
+            $response = $client->post($url, [
+                'headers' => $headers,
+                'body' => $payload,
+            ]);
+
+            $status = $response->getStatusCode();
+            $body = (string) $response->getBody();
+
+            $this->info("Response status: {$status}");
+            $this->newLine();
+
+            $this->info('Response headers:');
+            foreach ($response->getHeaders() as $name => $values) {
+                $this->line("  {$name}: ".implode(', ', $values));
+            }
+            $this->newLine();
+
+            $this->info('Response body:');
+            $this->line($body ?: '(empty)');
+
+            return $status >= 200 && $status < 300 ? self::SUCCESS : self::FAILURE;
+        } catch (\Throwable $e) {
+            $this->error("Transport error: {$e->getMessage()}");
+
+            return self::FAILURE;
+        }
     }
 
     protected function isRetryableStatus(int $status): bool

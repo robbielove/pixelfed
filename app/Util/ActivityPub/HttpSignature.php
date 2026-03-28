@@ -130,7 +130,7 @@ class HttpSignature
         unset($headers['(request-target)']);
         $headers['Signature'] = $signatureHeader;
 
-        return $headers;
+        return self::_headersToCurlArray($headers);
     }
 
     public static function parseSignatureHeader($signature)
