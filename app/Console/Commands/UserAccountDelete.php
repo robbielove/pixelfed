@@ -12,6 +12,7 @@ use GuzzleHttp\Psr7\Request;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use JsonException;
+use Psr\Http\Message\ResponseInterface;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\search;
@@ -20,7 +21,7 @@ use function Laravel\Prompts\table;
 class UserAccountDelete extends Command
 {
     protected $signature = 'app:user-account-delete
-        {--concurrency=150 : Number of concurrent deliveries}
+        {--concurrency=50 : Number of concurrent deliveries}
         {--chunk=500 : Number of inbox rows to process per DB chunk}
         {--attempts=2 : Max attempts for retryable failures}
         {--target= : Send to a single inbox URL for debugging}
@@ -295,6 +296,11 @@ class UserAccountDelete extends Command
             'connect_timeout' => 5.0,
             'http_errors' => false,
             'allow_redirects' => false,
+            'version' => '1.1',
+            'headers' => [
+                'User-Agent' => 'Pixelfed ('.config('app.url').')',
+                'Accept' => 'application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
+            ],
             'curl' => [
                 CURLOPT_TCP_FASTOPEN => true,
                 CURLOPT_TCP_NODELAY => true,
@@ -318,21 +324,20 @@ class UserAccountDelete extends Command
 
         $delivered = [];
         $httpFailed = [];
-        $retryable = collect();
+        $retryable = [];
 
         $requests = function () use ($urls, $privateKey, $keyId, $digest, $payload, $payloadLen) {
-            foreach ($urls as $key => $url) {
+            foreach ($urls as $url) {
                 $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest);
                 $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
-                $headers['Content-Length'] = $payloadLen;
-                yield $key => new Request('POST', $url, $headers, $payload);
+                $headers['Content-Length'] = (string) $payloadLen;
+                yield $url => new Request('POST', $url, $headers, $payload);
             }
         };
 
         $pool = new Pool($client, $requests(), [
             'concurrency' => $concurrency,
-            'fulfilled' => function ($response, $index) use ($urls, &$delivered, &$httpFailed, &$retryable, $verboseErrors) {
-                $url = $urls[$index];
+            'fulfilled' => function (ResponseInterface $response, string $url) use (&$delivered, &$httpFailed, &$retryable, $verboseErrors) {
                 $status = $response->getStatusCode();
 
                 if ($status >= 200 && $status < 300) {
@@ -341,22 +346,24 @@ class UserAccountDelete extends Command
                     return;
                 }
 
+                $body = mb_substr((string) $response->getBody(), 0, 500);
+
                 if ($verboseErrors) {
-                    $body = mb_substr((string) $response->getBody(), 0, 200);
                     $this->warn("  [{$status}] {$url} — {$body}");
                 }
 
                 if ($this->isRetryableStatus($status)) {
-                    $retryable->put($url, $status);
+                    $retryable[$url] = "HTTP {$status}";
 
                     return;
                 }
 
-                $httpFailed[$url] = ['status' => $status, 'body' => null];
+                $httpFailed[$url] = [
+                    'status' => $status,
+                    'body' => $body,
+                ];
             },
-            'rejected' => function ($reason, $index) use ($urls, &$retryable, $verboseErrors) {
-                $url = $urls[$index];
-
+            'rejected' => function ($reason, string $url) use (&$retryable, $verboseErrors) {
                 $message = $reason instanceof \Throwable
                     ? $reason->getMessage()
                     : (string) $reason;
@@ -365,7 +372,7 @@ class UserAccountDelete extends Command
                     $this->error("  [TRANSPORT] {$url} — {$message}");
                 }
 
-                $retryable->put($url, $message);
+                $retryable[$url] = $message;
             },
         ]);
 
@@ -374,7 +381,7 @@ class UserAccountDelete extends Command
         return [
             'delivered' => $delivered,
             'http_failed' => $httpFailed,
-            'retryable' => $retryable,
+            'retryable' => collect($retryable),
         ];
     }
 
