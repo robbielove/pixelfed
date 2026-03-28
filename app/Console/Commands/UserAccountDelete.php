@@ -20,7 +20,7 @@ use function Laravel\Prompts\table;
 class UserAccountDelete extends Command
 {
     protected $signature = 'app:user-account-delete
-        {--concurrency=50 : Number of concurrent deliveries}
+        {--concurrency=150 : Number of concurrent deliveries}
         {--chunk=500 : Number of inbox rows to process per DB chunk}
         {--attempts=2 : Max attempts for retryable failures}
         {--target= : Send to a single inbox URL for debugging}
