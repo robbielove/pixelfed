@@ -65,6 +65,8 @@ class UserAccountDelete extends Command
                 $activity,
                 JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
             );
+
+            $digest = base64_encode(hash('sha256', $payload, true));
         } catch (JsonException $e) {
             $this->error("Failed to encode delete payload: {$e->getMessage()}");
 
@@ -104,6 +106,7 @@ class UserAccountDelete extends Command
             $this->line("Chunk size: {$chunkSize}");
             $this->line("Attempts: {$attempts}");
             $this->line("Concurrency: {$concurrency}");
+            $this->line("Digest: {$digest}");
             $this->line($payload);
 
             return self::SUCCESS;
@@ -132,6 +135,7 @@ class UserAccountDelete extends Command
             ->chunk($chunkSize, function ($instances) use (
                 $client,
                 $payload,
+                $digest,
                 $concurrency,
                 $attempts,
                 &$results,
@@ -155,6 +159,7 @@ class UserAccountDelete extends Command
                 for ($attempt = 1; $attempt <= $attempts && $pending->isNotEmpty(); $attempt++) {
                     $batch = $this->sendBatch(
                         client: $client,
+                        digest: $digest,
                         urls: $pending,
                         payload: $payload,
                         concurrency: $concurrency
@@ -238,7 +243,6 @@ class UserAccountDelete extends Command
                 'id' => $actorId,
                 'type' => 'Person',
             ],
-            'published' => now()->toAtomString(),
         ];
     }
 
@@ -270,6 +274,7 @@ class UserAccountDelete extends Command
 
     protected function sendBatch(
         Client $client,
+        string $digest,
         Collection $urls,
         string $payload,
         int $concurrency
@@ -282,18 +287,20 @@ class UserAccountDelete extends Command
         $httpFailed = [];
         $retryable = collect();
 
-        $requests = function () use ($client, $urls, $payload, $userAgent) {
+        $requests = function () use ($client, $urls, $digest, $payload, $userAgent) {
             foreach ($urls as $url) {
-                $headers = HttpSignature::instanceActorSign($url, $payload, [
+                $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
                     'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-                    'Accept' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams", application/activity+json, application/json',
                     'User-Agent' => $userAgent,
                 ]);
 
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
-                        'headers' => $headers,
-                        'body' => $payload,
+                        'curl' => [
+                            CURLOPT_HTTPHEADER => $headers,
+                            CURLOPT_POSTFIELDS => $payload,
+                            CURLOPT_HEADER => true,
+                        ],
                     ]);
                 };
             }
