@@ -4,14 +4,13 @@ namespace App\Console\Commands;
 
 use App\Instance;
 use App\Profile;
-use App\Transformer\ActivityPub\Verb\DeleteActor;
 use App\User;
 use App\Util\ActivityPub\HttpSignature;
 use GuzzleHttp\Client;
 use GuzzleHttp\Pool;
 use Illuminate\Console\Command;
-use League\Fractal;
-use League\Fractal\Serializer\ArraySerializer;
+use Illuminate\Support\Collection;
+use JsonException;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\search;
@@ -19,39 +18,31 @@ use function Laravel\Prompts\table;
 
 class UserAccountDelete extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'app:user-account-delete';
+    protected $signature = 'app:user-account-delete
+        {--concurrency=150 : Number of concurrent deliveries}
+        {--chunk=500 : Number of inbox rows to process per DB chunk}
+        {--attempts=2 : Max attempts for retryable failures}
+        {--dry-run : Build payload and audience, but do not send}';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
     protected $description = 'Federate Account Deletion';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle()
+    public function handle(): int
     {
-        $id = search(
-            label: 'Search for the account to delete by username',
-            placeholder: 'john.appleseed',
-            options: fn (string $value) => strlen($value) > 0
-                ? User::withTrashed()->whereStatus('deleted')->where('username', 'like', "%{$value}%")->pluck('username', 'id')->all()
-                : [],
-        );
+        $user = $this->promptForDeletedUser();
+        if (! $user) {
+            $this->error('No deleted user selected.');
 
-        $user = User::withTrashed()->find($id);
+            return self::FAILURE;
+        }
 
-        table(
-            ['Username', 'Name', 'Email', 'Created'],
-            [[$user->username, $user->name, $user->email, $user->created_at]]
-        );
+        $profile = Profile::withTrashed()->find($user->profile_id);
+        if (! $profile) {
+            $this->error('Profile not found for selected user.');
+
+            return self::FAILURE;
+        }
+
+        $this->showUserSummary($user);
 
         $confirmed = confirm(
             label: 'Do you want to federate this account deletion?',
@@ -62,74 +53,313 @@ class UserAccountDelete extends Command
         );
 
         if (! $confirmed) {
-            $this->error('Aborting...');
-            exit;
+            $this->warn('Aborting...');
+
+            return self::FAILURE;
         }
 
-        $profile = Profile::withTrashed()->find($user->profile_id);
+        $activity = $this->buildDeleteActivity($profile);
 
-        $fractal = new Fractal\Manager;
-        $fractal->setSerializer(new ArraySerializer);
-        $resource = new Fractal\Resource\Item($profile, new DeleteActor);
-        $activity = $fractal->createData($resource)->toArray();
-        $payload = json_encode($activity);
+        try {
+            $payload = json_encode(
+                $activity,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR
+            );
+        } catch (JsonException $e) {
+            $this->error("Failed to encode delete payload: {$e->getMessage()}");
 
-        $client = new Client([
-            'timeout' => 5,
-            'connect_timeout' => 2,
+            return self::FAILURE;
+        }
+
+        $query = $this->sharedInboxQuery();
+
+        $chunkSize = max(1, (int) $this->option('chunk'));
+        $attempts = max(1, (int) $this->option('attempts'));
+        $concurrency = max(1, (int) $this->option('concurrency'));
+
+        $totalTargets = (clone $query)
+            ->toBase()
+            ->distinct()
+            ->count('shared_inbox');
+
+        if ($this->option('dry-run')) {
+            $this->line('Dry run only.');
+            $this->line("Audience size: {$totalTargets}");
+            $this->line("Chunk size: {$chunkSize}");
+            $this->line("Attempts: {$attempts}");
+            $this->line("Concurrency: {$concurrency}");
+            $this->line($payload);
+
+            return self::SUCCESS;
+        }
+
+        if ($totalTargets === 0) {
+            $this->warn('No candidate shared inboxes found.');
+
+            return self::SUCCESS;
+        }
+
+        $client = $this->makeHttpClient();
+
+        $results = [
+            'delivered' => 0,
+            'http_failed' => [],
+            'transport_failed' => [],
+            'retry_exhausted' => [],
+        ];
+
+        $bar = $this->output->createProgressBar($totalTargets);
+        $bar->start();
+
+        $query
+            ->orderBy('shared_inbox')
+            ->chunk($chunkSize, function ($instances) use (
+                $client,
+                $profile,
+                $payload,
+                $concurrency,
+                $attempts,
+                &$results,
+                $bar
+            ) {
+                $urls = $instances
+                    ->pluck('shared_inbox')
+                    ->filter()
+                    ->unique()
+                    ->values();
+
+                if ($urls->isEmpty()) {
+                    return;
+                }
+
+                $pending = $urls;
+                $terminalDelivered = 0;
+                $terminalHttpFailed = [];
+                $terminalTransportFailed = [];
+
+                for ($attempt = 1; $attempt <= $attempts && $pending->isNotEmpty(); $attempt++) {
+                    $batch = $this->sendBatch(
+                        client: $client,
+                        urls: $pending,
+                        profile: $profile,
+                        payload: $payload,
+                        concurrency: $concurrency
+                    );
+
+                    $terminalDelivered += count($batch['delivered']);
+                    $terminalHttpFailed += $batch['http_failed'];
+
+                    $pending = collect($batch['retryable']->keys())->values();
+
+                    if ($attempt === $attempts && $pending->isNotEmpty()) {
+                        foreach ($pending as $url) {
+                            $terminalTransportFailed[$url] = $batch['retryable'][$url] ?? 'retry exhausted';
+                        }
+                    }
+
+                    if ($attempt < $attempts && $pending->isNotEmpty()) {
+                        usleep($attempt * 250_000);
+                    }
+                }
+
+                $results['delivered'] += $terminalDelivered;
+                $results['http_failed'] += $terminalHttpFailed;
+                $results['transport_failed'] += $terminalTransportFailed;
+                $results['retry_exhausted'] += $terminalTransportFailed;
+
+                $resolved = $terminalDelivered + count($terminalHttpFailed) + count($terminalTransportFailed);
+                $bar->advance($resolved);
+            });
+
+        $bar->finish();
+        $this->newLine(2);
+
+        $this->info("Delivered: {$results['delivered']}");
+        $this->warn('HTTP failures: '.count($results['http_failed']));
+        $this->warn('Transport/retry-exhausted failures: '.count($results['transport_failed']));
+
+        return self::SUCCESS;
+    }
+
+    protected function promptForDeletedUser(): ?User
+    {
+        $id = search(
+            label: 'Search for the account to delete by username',
+            placeholder: 'john.appleseed',
+            options: fn (string $value) => strlen($value) > 0
+                ? User::withTrashed()
+                    ->whereStatus('deleted')
+                    ->where('username', 'like', "%{$value}%")
+                    ->pluck('username', 'id')
+                    ->all()
+                : [],
+        );
+
+        return User::withTrashed()->find($id);
+    }
+
+    protected function showUserSummary(User $user): void
+    {
+        table(
+            ['Username', 'Name', 'Email', 'Created'],
+            [[
+                $user->username,
+                $user->name,
+                $user->email,
+                (string) $user->created_at,
+            ]]
+        );
+    }
+
+    protected function buildDeleteActivity(Profile $profile): array
+    {
+        $actorId = $profile->permalink();
+
+        return [
+            '@context' => 'https://www.w3.org/ns/activitystreams',
+            'id' => $actorId.'#delete',
+            'type' => 'Delete',
+            'actor' => $actorId,
+            'object' => [
+                'id' => $actorId,
+                'type' => 'Person',
+            ],
+            'published' => now()->toAtomString(),
+        ];
+    }
+
+    protected function sharedInboxQuery()
+    {
+        return Instance::query()
+            ->whereNotNull('shared_inbox')
+            ->whereNotNull('nodeinfo_last_fetched')
+            ->where('nodeinfo_last_fetched', '>', now()->subDays(30))
+            ->select('shared_inbox')
+            ->distinct();
+    }
+
+    protected function makeHttpClient(): Client
+    {
+        return new Client([
+            'timeout' => 8.0,
+            'connect_timeout' => 3.0,
+            'http_errors' => false,
+            'allow_redirects' => false,
         ]);
+    }
 
+    protected function sendBatch(
+        Client $client,
+        Collection $urls,
+        Profile $profile,
+        string $payload,
+        int $concurrency
+    ): array {
         $version = config('pixelfed.version');
         $appUrl = config('app.url');
         $userAgent = "(Pixelfed/{$version}; +{$appUrl})";
 
-        $totalSent = 0;
-        $bar = $this->output->createProgressBar();
-        $bar->start();
+        $delivered = [];
+        $httpFailed = [];
+        $retryable = collect();
 
-        Instance::whereNotNull('shared_inbox')
-            ->whereNotNull('nodeinfo_last_fetched')
-            ->where('nodeinfo_last_fetched', '>', now()->subDays(14))
-            ->select(['shared_inbox'])
-            ->distinct()
-            ->chunk(500, function ($instances) use ($client, $activity, $profile, $payload, $userAgent, &$totalSent, $bar) {
-                $audience = $instances->pluck('shared_inbox')->unique();
+        $requests = function () use ($client, $urls, $profile, $payload, $userAgent) {
+            foreach ($urls as $url) {
+                $headers = $this->normalizeHeaders(
+                    HttpSignature::sign($profile, $url, $payload, [
+                        'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
+                        'Accept' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams", application/activity+json, application/json',
+                        'User-Agent' => $userAgent,
+                    ])
+                );
 
-                $requests = function ($audience) use ($client, $activity, $profile, $payload, $userAgent) {
-                    foreach ($audience as $url) {
-                        $headers = HttpSignature::sign($profile, $url, $activity, [
-                            'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-                            'User-Agent' => $userAgent,
-                        ]);
-                        yield function () use ($client, $url, $headers, $payload) {
-                            return $client->postAsync($url, [
-                                'curl' => [
-                                    CURLOPT_HTTPHEADER => $headers,
-                                    CURLOPT_POSTFIELDS => $payload,
-                                    CURLOPT_HEADER => true,
-                                ],
-                            ]);
-                        };
-                    }
+                yield function () use ($client, $url, $headers, $payload) {
+                    return $client->postAsync($url, [
+                        'headers' => $headers,
+                        'body' => $payload,
+                    ]);
                 };
+            }
+        };
 
-                $pool = new Pool($client, $requests($audience), [
-                    'concurrency' => 100,
-                    'fulfilled' => function ($response, $index) use (&$totalSent, $bar) {
-                        $totalSent++;
-                        $bar->advance();
-                    },
-                    'rejected' => function ($reason, $index) use ($bar) {
-                        $bar->advance();
-                    },
-                ]);
+        $pool = new Pool($client, $requests(), [
+            'concurrency' => $concurrency,
+            'fulfilled' => function ($response, $index) use ($urls, &$delivered, &$httpFailed, &$retryable) {
+                $url = $urls[$index];
+                $status = $response->getStatusCode();
 
-                $promise = $pool->promise();
-                $promise->wait();
-            });
+                if ($status >= 200 && $status < 300) {
+                    $delivered[$url] = $status;
 
-        $bar->finish();
-        $this->newLine();
-        $this->info("Successfully sent Delete activity to {$totalSent} instances.");
+                    return;
+                }
+
+                if ($this->isRetryableStatus($status)) {
+                    $retryable->put($url, $status);
+
+                    return;
+                }
+
+                $httpFailed[$url] = [
+                    'status' => $status,
+                    'body' => $this->truncateBody((string) $response->getBody()),
+                ];
+            },
+            'rejected' => function ($reason, $index) use ($urls, &$retryable) {
+                $url = $urls[$index];
+
+                $message = $reason instanceof \Throwable
+                    ? $reason->getMessage()
+                    : (string) $reason;
+
+                $retryable->put($url, $message);
+            },
+        ]);
+
+        $pool->promise()->wait();
+
+        return [
+            'delivered' => $delivered,
+            'http_failed' => $httpFailed,
+            'retryable' => $retryable,
+        ];
+    }
+
+    protected function isRetryableStatus(int $status): bool
+    {
+        return in_array($status, [408, 425, 429, 500, 502, 503, 504], true);
+    }
+
+    protected function truncateBody(string $body, int $limit = 1000): ?string
+    {
+        $body = trim($body);
+
+        if ($body === '') {
+            return null;
+        }
+
+        return mb_strlen($body) > $limit
+            ? mb_substr($body, 0, $limit).'…'
+            : $body;
+    }
+
+    protected function normalizeHeaders(array $headers): array
+    {
+        $normalized = [];
+
+        foreach ($headers as $key => $value) {
+            if (is_string($key)) {
+                $normalized[$key] = $value;
+
+                continue;
+            }
+
+            if (is_string($value) && str_contains($value, ':')) {
+                [$name, $headerValue] = explode(':', $value, 2);
+                $normalized[trim($name)] = trim($headerValue);
+            }
+        }
+
+        return $normalized;
     }
 }
