@@ -291,21 +291,16 @@ class UserAccountDelete extends Command
         $appUrl = config('app.url');
         $userAgent = "(Pixelfed/{$version}; +{$appUrl})";
 
-        $requests = function () use ($client, $urls, $digest, $payload, $userAgent) {
+        $requests = function () use ($client, $urls, $digest, $payload) {
             foreach ($urls as $url) {
                 $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
                     'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
                 ]);
 
-                $headers['User-Agent'] = $userAgent;
-
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
-                        'curl' => [
-                            CURLOPT_HTTPHEADER => $headers,
-                            CURLOPT_POSTFIELDS => $payload,
-                            CURLOPT_HEADER => true,
-                        ],
+                        'headers' => $headers,
+                        'body' => $payload,
                     ]);
                 };
             }
@@ -361,8 +356,6 @@ class UserAccountDelete extends Command
             'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
         ]);
 
-        $headers['User-Agent'] = $userAgent;
-
         $this->info('Target: '.$url);
         $this->newLine();
 
@@ -385,11 +378,8 @@ class UserAccountDelete extends Command
 
         try {
             $response = $client->post($url, [
-                'curl' => [
-                    CURLOPT_HTTPHEADER => $headers,
-                    CURLOPT_POSTFIELDS => $payload,
-                    CURLOPT_HEADER => true,
-                ],
+                'headers' => $headers,
+                'body' => $payload,
             ]);
 
             $status = $response->getStatusCode();
