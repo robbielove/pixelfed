@@ -379,7 +379,7 @@ class UserAccountDelete extends Command
 
         try {
             $response = $client->post($url, [
-                 'curl' => [
+                'curl' => [
                     CURLOPT_HTTPHEADER => $headers,
                     CURLOPT_POSTFIELDS => $payload,
                     CURLOPT_HEADER => true,
