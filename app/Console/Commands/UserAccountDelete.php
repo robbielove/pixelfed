@@ -8,6 +8,7 @@ use App\User;
 use App\Util\ActivityPub\HttpSignature;
 use GuzzleHttp\Client;
 use GuzzleHttp\Pool;
+use GuzzleHttp\Psr7\Request;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use JsonException;
@@ -19,7 +20,7 @@ use function Laravel\Prompts\table;
 class UserAccountDelete extends Command
 {
     protected $signature = 'app:user-account-delete
-        {--concurrency=50 : Number of concurrent deliveries}
+        {--concurrency=150 : Number of concurrent deliveries}
         {--chunk=500 : Number of inbox rows to process per DB chunk}
         {--attempts=2 : Max attempts for retryable failures}
         {--target= : Send to a single inbox URL for debugging}
@@ -69,6 +70,7 @@ class UserAccountDelete extends Command
             );
 
             $digest = base64_encode(hash('sha256', $payload, true));
+            $payloadLen = strlen($payload);
         } catch (JsonException $e) {
             $this->error("Failed to encode delete payload: {$e->getMessage()}");
 
@@ -161,6 +163,7 @@ class UserAccountDelete extends Command
                 $client,
                 $payload,
                 $privateKey,
+                $payloadLen,
                 $keyId,
                 $digest,
                 $concurrency,
@@ -191,6 +194,7 @@ class UserAccountDelete extends Command
                         digest: $digest,
                         urls: $pending,
                         payload: $payload,
+                        payloadLen: $payloadLen,
                         concurrency: $concurrency,
                         verboseErrors: $this->option('verbose-errors')
                     );
@@ -287,7 +291,7 @@ class UserAccountDelete extends Command
     protected function makeHttpClient(): Client
     {
         return new Client([
-            'timeout' => 15.0,
+            'timeout' => 10.0,
             'connect_timeout' => 5.0,
             'http_errors' => false,
             'allow_redirects' => false,
@@ -307,6 +311,7 @@ class UserAccountDelete extends Command
         string $digest,
         Collection $urls,
         string $payload,
+        int $payloadLen,
         int $concurrency,
         bool $verboseErrors = false
     ): array {
@@ -315,17 +320,12 @@ class UserAccountDelete extends Command
         $httpFailed = [];
         $retryable = collect();
 
-        $requests = function () use ($client, $urls, $privateKey, $keyId, $digest, $payload) {
-            foreach ($urls as $url) {
+        $requests = function () use ($urls, $privateKey, $keyId, $digest, $payload, $payloadLen) {
+            foreach ($urls as $key => $url) {
                 $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest);
                 $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
-
-                yield function () use ($client, $url, $headers, $payload) {
-                    return $client->postAsync($url, [
-                        'headers' => $headers,
-                        'body' => $payload,
-                    ]);
-                };
+                $headers['Content-Length'] = $payloadLen;
+                yield $key => new Request('POST', $url, $headers, $payload);
             }
         };
 
