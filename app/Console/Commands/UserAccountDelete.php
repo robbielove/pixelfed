@@ -241,7 +241,7 @@ class UserAccountDelete extends Command
 
         return [
             '@context' => 'https://www.w3.org/ns/activitystreams',
-            'id' => $actorId.'#delete-'.time(),
+            'id' => $actorId.'#delete',
             'type' => 'Delete',
             'actor' => $actorId,
             'to' => ['https://www.w3.org/ns/activitystreams#Public'],
