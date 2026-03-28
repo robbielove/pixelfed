@@ -301,12 +301,6 @@ class UserAccountDelete extends Command
                 'User-Agent' => 'Pixelfed ('.config('app.url').')',
                 'Accept' => 'application/activity+json, application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
             ],
-            'curl' => [
-                CURLOPT_TCP_FASTOPEN => true,
-                CURLOPT_TCP_NODELAY => true,
-                CURLOPT_FORBID_REUSE => false,
-                CURLOPT_FRESH_CONNECT => false,
-            ],
         ]);
     }
 
