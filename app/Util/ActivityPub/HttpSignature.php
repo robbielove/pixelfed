@@ -41,6 +41,38 @@ class HttpSignature
         return self::_headersToCurlArray($headers);
     }
 
+    public static function signRawWithDigest(
+        string $privateKey,
+        string $keyId,
+        string $url,
+        string $digest,
+        array $addlHeaders = [],
+        string $method = 'post'
+    ): array {
+        $headers = self::_headersToSign($url, $digest, $method);
+        $headers = array_merge($headers, $addlHeaders);
+        $stringToSign = self::_headersToSigningString($headers);
+        $signedHeaders = implode(' ', array_map('strtolower', array_keys($headers)));
+
+        $key = openssl_pkey_get_private($privateKey);
+        if (empty($key)) {
+            throw new \RuntimeException('Private key is missing or invalid');
+        }
+
+        openssl_sign($stringToSign, $signature, $key, OPENSSL_ALGO_SHA256);
+        if (empty($signature)) {
+            throw new \RuntimeException('Failed to generate signature');
+        }
+
+        $signature = base64_encode($signature);
+        $signatureHeader = 'keyId="'.$keyId.'",headers="'.$signedHeaders.'",algorithm="rsa-sha256",signature="'.$signature.'"';
+
+        unset($headers['(request-target)']);
+        $headers['Signature'] = $signatureHeader;
+
+        return $headers;
+    }
+
     public static function signRaw($privateKey, $keyId, $url, $body = false, $addlHeaders = [])
     {
         if (empty($privateKey) || empty($keyId)) {

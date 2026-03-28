@@ -85,10 +85,28 @@ class UserAccountDelete extends Command
             ->distinct()
             ->count('shared_inbox');
 
+        $privateKey = $profile->private_key;
+
+        if (empty($privateKey)) {
+            $this->error('Profile private key has been wiped — cannot sign deletion activity.');
+
+            return self::FAILURE;
+        }
+
+        $keyId = $profile->keyId();
+
+        if (empty($keyId)) {
+            $this->error('Profile key id has been wiped — cannot sign deletion activity.');
+
+            return self::FAILURE;
+        }
+
         try {
-            $testHeaders = HttpSignature::instanceActorSign(
+            $testHeaders = HttpSignature::signRawWithDigest(
+                $privateKey,
+                $keyId,
                 config('app.url').'/inbox',
-                $payload,
+                $digest,
             );
             if (empty($testHeaders) || ! isset($testHeaders['Signature'])) {
                 $this->error('Instance actor signing failed — run php artisan instance:actor');
@@ -108,13 +126,14 @@ class UserAccountDelete extends Command
             $this->line("Attempts: {$attempts}");
             $this->line("Concurrency: {$concurrency}");
             $this->line("Digest: {$digest}");
+            $this->line("Key ID: {$keyId}");
             $this->line($payload);
 
             return self::SUCCESS;
         }
 
         if ($target = $this->option('target')) {
-            return $this->sendDebug($target, $payload, $digest);
+            return $this->sendDebug($target, $payload, $digest, $privateKey, $keyId);
         }
 
         if ($totalTargets === 0) {
@@ -140,6 +159,8 @@ class UserAccountDelete extends Command
             ->chunk($chunkSize, function ($instances) use (
                 $client,
                 $payload,
+                $privateKey,
+                $keyId,
                 $digest,
                 $concurrency,
                 $attempts,
@@ -164,6 +185,8 @@ class UserAccountDelete extends Command
                 for ($attempt = 1; $attempt <= $attempts && $pending->isNotEmpty(); $attempt++) {
                     $batch = $this->sendBatch(
                         client: $client,
+                        privateKey: $privateKey,
+                        keyId: $keyId,
                         digest: $digest,
                         urls: $pending,
                         payload: $payload,
@@ -277,6 +300,8 @@ class UserAccountDelete extends Command
 
     protected function sendBatch(
         Client $client,
+        string $privateKey,
+        string $keyId,
         string $digest,
         Collection $urls,
         string $payload,
@@ -287,11 +312,11 @@ class UserAccountDelete extends Command
         $httpFailed = [];
         $retryable = collect();
 
-        $requests = function () use ($client, $urls, $digest, $payload) {
+        $requests = function () use ($client, $urls, $privateKey, $keyId, $digest, $payload) {
             foreach ($urls as $url) {
-                $headers = HttpSignature::instanceActorSignWithDigest($url, $digest);
-
-                $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
+                $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest, [
+                    'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
+                ]);
 
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
@@ -342,11 +367,11 @@ class UserAccountDelete extends Command
         ];
     }
 
-    protected function sendDebug(string $url, string $payload, string $digest): int
+    protected function sendDebug(string $url, string $payload, string $digest, string $privateKey, string $keyId): int
     {
-        $headers = HttpSignature::instanceActorSignWithDigest($url, $digest);
-
-        $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
+        $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest, [
+            'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
+        ]);
 
         $this->info('Target: '.$url);
         $this->newLine();
