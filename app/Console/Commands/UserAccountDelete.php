@@ -314,9 +314,9 @@ class UserAccountDelete extends Command
 
         $requests = function () use ($client, $urls, $privateKey, $keyId, $digest, $payload) {
             foreach ($urls as $url) {
-                $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest, [
-                    'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-                ]);
+                $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest);
+
+                $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
@@ -369,9 +369,9 @@ class UserAccountDelete extends Command
 
     protected function sendDebug(string $url, string $payload, string $digest, string $privateKey, string $keyId): int
     {
-        $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest, [
-            'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-        ]);
+        $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest);
+
+        $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
         $this->info('Target: '.$url);
         $this->newLine();
