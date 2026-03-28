@@ -19,10 +19,11 @@ use function Laravel\Prompts\table;
 class UserAccountDelete extends Command
 {
     protected $signature = 'app:user-account-delete
-        {--concurrency=500 : Number of concurrent deliveries}
+        {--concurrency=50 : Number of concurrent deliveries}
         {--chunk=500 : Number of inbox rows to process per DB chunk}
         {--attempts=2 : Max attempts for retryable failures}
         {--target= : Send to a single inbox URL for debugging}
+        {--verbose-errors : Log each failure to console}
         {--dry-run : Build payload and audience, but do not send}';
 
     protected $description = 'Federate Account Deletion';
@@ -190,7 +191,8 @@ class UserAccountDelete extends Command
                         digest: $digest,
                         urls: $pending,
                         payload: $payload,
-                        concurrency: $concurrency
+                        concurrency: $concurrency,
+                        verboseErrors: $this->option('verbose-errors')
                     );
 
                     $terminalDelivered += count($batch['delivered']);
@@ -285,8 +287,8 @@ class UserAccountDelete extends Command
     protected function makeHttpClient(): Client
     {
         return new Client([
-            'timeout' => 5.0,
-            'connect_timeout' => 2.0,
+            'timeout' => 15.0,
+            'connect_timeout' => 5.0,
             'http_errors' => false,
             'allow_redirects' => false,
             'curl' => [
@@ -305,7 +307,8 @@ class UserAccountDelete extends Command
         string $digest,
         Collection $urls,
         string $payload,
-        int $concurrency
+        int $concurrency,
+        bool $verboseErrors = false
     ): array {
 
         $delivered = [];
@@ -315,7 +318,6 @@ class UserAccountDelete extends Command
         $requests = function () use ($client, $urls, $privateKey, $keyId, $digest, $payload) {
             foreach ($urls as $url) {
                 $headers = HttpSignature::signRawWithDigest($privateKey, $keyId, $url, $digest);
-
                 $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
                 yield function () use ($client, $url, $headers, $payload) {
@@ -329,7 +331,7 @@ class UserAccountDelete extends Command
 
         $pool = new Pool($client, $requests(), [
             'concurrency' => $concurrency,
-            'fulfilled' => function ($response, $index) use ($urls, &$delivered, &$httpFailed, &$retryable) {
+            'fulfilled' => function ($response, $index) use ($urls, &$delivered, &$httpFailed, &$retryable, $verboseErrors) {
                 $url = $urls[$index];
                 $status = $response->getStatusCode();
 
@@ -337,6 +339,11 @@ class UserAccountDelete extends Command
                     $delivered[$url] = $status;
 
                     return;
+                }
+
+                if ($verboseErrors) {
+                    $body = mb_substr((string) $response->getBody(), 0, 200);
+                    $this->warn("  [{$status}] {$url} — {$body}");
                 }
 
                 if ($this->isRetryableStatus($status)) {
@@ -347,12 +354,16 @@ class UserAccountDelete extends Command
 
                 $httpFailed[$url] = ['status' => $status, 'body' => null];
             },
-            'rejected' => function ($reason, $index) use ($urls, &$retryable) {
+            'rejected' => function ($reason, $index) use ($urls, &$retryable, $verboseErrors) {
                 $url = $urls[$index];
 
                 $message = $reason instanceof \Throwable
                     ? $reason->getMessage()
                     : (string) $reason;
+
+                if ($verboseErrors) {
+                    $this->error("  [TRANSPORT] {$url} — {$message}");
+                }
 
                 $retryable->put($url, $message);
             },
