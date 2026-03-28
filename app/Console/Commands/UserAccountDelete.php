@@ -287,11 +287,17 @@ class UserAccountDelete extends Command
         $httpFailed = [];
         $retryable = collect();
 
-        $requests = function () use ($client, $urls, $digest, $payload) {
+        $version = config('pixelfed.version');
+        $appUrl = config('app.url');
+        $userAgent = "(Pixelfed/{$version}; +{$appUrl})";
+
+        $requests = function () use ($client, $urls, $digest, $payload, $userAgent) {
             foreach ($urls as $url) {
                 $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
                     'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
                 ]);
+
+                $headers['User-Agent'] = $userAgent;
 
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
@@ -354,6 +360,8 @@ class UserAccountDelete extends Command
         $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
             'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
         ]);
+
+        $headers['User-Agent'] = $userAgent;
 
         $this->info('Target: '.$url);
         $this->newLine();
