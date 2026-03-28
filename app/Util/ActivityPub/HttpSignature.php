@@ -186,6 +186,7 @@ class HttpSignature
 
         $signatureHeader = 'keyId="'.$keyId.'",headers="'.$signedHeaders.'",algorithm="rsa-sha256",signature="'.$signature.'"';
         unset($headers['(request-target)']);
+        unset($headers['Host']);
         $headers['Signature'] = $signatureHeader;
 
         return $headers;
