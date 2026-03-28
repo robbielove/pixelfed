@@ -291,7 +291,7 @@ class UserAccountDelete extends Command
     protected function makeHttpClient(): Client
     {
         return new Client([
-            'timeout' => 15.0,
+            'timeout' => 10.0,
             'connect_timeout' => 5.0,
             'http_errors' => false,
             'allow_redirects' => false,
