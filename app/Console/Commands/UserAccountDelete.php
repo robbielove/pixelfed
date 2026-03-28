@@ -289,9 +289,9 @@ class UserAccountDelete extends Command
 
         $requests = function () use ($client, $urls, $digest, $payload) {
             foreach ($urls as $url) {
-                $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
-                    'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-                ]);
+                $headers = HttpSignature::instanceActorSignWithDigest($url, $digest);
+
+                $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
@@ -344,9 +344,9 @@ class UserAccountDelete extends Command
 
     protected function sendDebug(string $url, string $payload, string $digest): int
     {
-        $headers = HttpSignature::instanceActorSignWithDigest($url, $digest, [
-            'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-        ]);
+        $headers = HttpSignature::instanceActorSignWithDigest($url, $digest);
+
+        $headers['Content-Type'] = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"';
 
         $this->info('Target: '.$url);
         $this->newLine();
