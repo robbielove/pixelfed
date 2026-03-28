@@ -19,7 +19,7 @@ use function Laravel\Prompts\table;
 class UserAccountDelete extends Command
 {
     protected $signature = 'app:user-account-delete
-        {--concurrency=150 : Number of concurrent deliveries}
+        {--concurrency=500 : Number of concurrent deliveries}
         {--chunk=500 : Number of inbox rows to process per DB chunk}
         {--attempts=2 : Max attempts for retryable failures}
         {--dry-run : Build payload and audience, but do not send}';
@@ -82,6 +82,22 @@ class UserAccountDelete extends Command
             ->distinct()
             ->count('shared_inbox');
 
+        try {
+            $testHeaders = HttpSignature::instanceActorSign(
+                config('app.url').'/inbox',
+                $payload,
+            );
+            if (empty($testHeaders) || ! isset($testHeaders['Signature'])) {
+                $this->error('Instance actor signing failed — run php artisan instance:actor');
+
+                return self::FAILURE;
+            }
+        } catch (\Exception $e) {
+            $this->error("Instance actor error: {$e->getMessage()}");
+
+            return self::FAILURE;
+        }
+
         if ($this->option('dry-run')) {
             $this->line('Dry run only.');
             $this->line("Audience size: {$totalTargets}");
@@ -115,7 +131,6 @@ class UserAccountDelete extends Command
             ->orderBy('shared_inbox')
             ->chunk($chunkSize, function ($instances) use (
                 $client,
-                $profile,
                 $payload,
                 $concurrency,
                 $attempts,
@@ -141,7 +156,6 @@ class UserAccountDelete extends Command
                     $batch = $this->sendBatch(
                         client: $client,
                         urls: $pending,
-                        profile: $profile,
                         payload: $payload,
                         concurrency: $concurrency
                     );
@@ -158,7 +172,7 @@ class UserAccountDelete extends Command
                     }
 
                     if ($attempt < $attempts && $pending->isNotEmpty()) {
-                        usleep($attempt * 250_000);
+                        usleep(100_000);
                     }
                 }
 
@@ -241,17 +255,22 @@ class UserAccountDelete extends Command
     protected function makeHttpClient(): Client
     {
         return new Client([
-            'timeout' => 8.0,
-            'connect_timeout' => 3.0,
+            'timeout' => 5.0,
+            'connect_timeout' => 2.0,
             'http_errors' => false,
             'allow_redirects' => false,
+            'curl' => [
+                CURLOPT_TCP_FASTOPEN => true,
+                CURLOPT_TCP_NODELAY => true,
+                CURLOPT_FORBID_REUSE => false,
+                CURLOPT_FRESH_CONNECT => false,
+            ],
         ]);
     }
 
     protected function sendBatch(
         Client $client,
         Collection $urls,
-        Profile $profile,
         string $payload,
         int $concurrency
     ): array {
@@ -263,15 +282,13 @@ class UserAccountDelete extends Command
         $httpFailed = [];
         $retryable = collect();
 
-        $requests = function () use ($client, $urls, $profile, $payload, $userAgent) {
+        $requests = function () use ($client, $urls, $payload, $userAgent) {
             foreach ($urls as $url) {
-                $headers = $this->normalizeHeaders(
-                    HttpSignature::sign($profile, $url, $payload, [
-                        'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
-                        'Accept' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams", application/activity+json, application/json',
-                        'User-Agent' => $userAgent,
-                    ])
-                );
+                $headers = HttpSignature::instanceActorSign($url, $payload, [
+                    'Content-Type' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"',
+                    'Accept' => 'application/ld+json; profile="https://www.w3.org/ns/activitystreams", application/activity+json, application/json',
+                    'User-Agent' => $userAgent,
+                ]);
 
                 yield function () use ($client, $url, $headers, $payload) {
                     return $client->postAsync($url, [
@@ -300,10 +317,7 @@ class UserAccountDelete extends Command
                     return;
                 }
 
-                $httpFailed[$url] = [
-                    'status' => $status,
-                    'body' => $this->truncateBody((string) $response->getBody()),
-                ];
+                $httpFailed[$url] = ['status' => $status, 'body' => null];
             },
             'rejected' => function ($reason, $index) use ($urls, &$retryable) {
                 $url = $urls[$index];
@@ -328,38 +342,5 @@ class UserAccountDelete extends Command
     protected function isRetryableStatus(int $status): bool
     {
         return in_array($status, [408, 425, 429, 500, 502, 503, 504], true);
-    }
-
-    protected function truncateBody(string $body, int $limit = 1000): ?string
-    {
-        $body = trim($body);
-
-        if ($body === '') {
-            return null;
-        }
-
-        return mb_strlen($body) > $limit
-            ? mb_substr($body, 0, $limit).'…'
-            : $body;
-    }
-
-    protected function normalizeHeaders(array $headers): array
-    {
-        $normalized = [];
-
-        foreach ($headers as $key => $value) {
-            if (is_string($key)) {
-                $normalized[$key] = $value;
-
-                continue;
-            }
-
-            if (is_string($value) && str_contains($value, ':')) {
-                [$name, $headerValue] = explode(':', $value, 2);
-                $normalized[trim($name)] = trim($headerValue);
-            }
-        }
-
-        return $normalized;
     }
 }
