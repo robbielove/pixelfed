@@ -136,23 +136,24 @@ class ActivityPubFetchService
             return;
         }
 
-        // For application/ld+json, verify the ActivityStreams profile parameter
-        if ($mediaType === 'application/ld+json') {
-            $hasActivityStreamsProfile = false;
-            foreach (array_slice($contentTypeParts, 1) as $param) {
-                $param = trim($param);
-                if (stripos($param, 'profile=') === 0) {
-                    $profile = trim(substr($param, strlen('profile=')), ' "\'');
-                    if ($profile === 'https://www.w3.org/ns/activitystreams') {
-                        $hasActivityStreamsProfile = true;
-                        break;
-                    }
-                }
-            }
-            if (! $hasActivityStreamsProfile) {
-                return;
-            }
-        }
+        //// For application/ld+json, verify the ActivityStreams profile parameter
+        // TODO: Validate if this check is required
+        // if ($mediaType === 'application/ld+json') {
+        //     $hasActivityStreamsProfile = false;
+        //     foreach (array_slice($contentTypeParts, 1) as $param) {
+        //         $param = trim($param);
+        //         if (stripos($param, 'profile=') === 0) {
+        //             $profile = trim(substr($param, strlen('profile=')), ' "\'');
+        //             if ($profile === 'https://www.w3.org/ns/activitystreams') {
+        //                 $hasActivityStreamsProfile = true;
+        //                 break;
+        //             }
+        //         }
+        //     }
+        //     if (! $hasActivityStreamsProfile) {
+        //         return;
+        //     }
+        // }
 
         return $returnJsonFormat ? $res->json() : $res->body();
     }
