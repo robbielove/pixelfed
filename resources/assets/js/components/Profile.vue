@@ -138,11 +138,11 @@
                                         <div v-if="profile.pronouns" class="text-muted small">{{profile.pronouns.join('/')}}</div>
                                     </div>
                                     <div v-if="profile.note">
-                                        <p v-if="user || profile.followers_count > 100" class="mb-0" v-html="profile.note"></p>
+                                        <p v-if="user || profile.followers_count > 10 || profile.statuses_count > 10" class="mb-0" v-html="profile.note"></p>
                                         <p v-else ></p>
                                     </div>
                                     <p v-if="profile.website">
-                                        <a v-if="user || profile.followers_count > 100" :href="profile.website" class="profile-website small" rel="me external nofollow noopener" target="_blank">{{formatWebsite(profile.website)}}</a>
+                                        <a v-if="user || profile.followers_count > 10 || profile.statuses_count > 10" :href="profile.website" class="profile-website small" rel="me external nofollow noopener" target="_blank">{{formatWebsite(profile.website)}}</a>
                                         <span class="profile-website small"></span>
                                     </p>
                                     <p class="d-flex small text-muted align-items-center">
