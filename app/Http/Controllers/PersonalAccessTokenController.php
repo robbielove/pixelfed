@@ -78,7 +78,7 @@ class PersonalAccessTokenController extends Controller
         ]);
     }
 
-    public function destroy(Request $request, string $token): JsonResponse
+    public function destroy(Request $request, string $token)
     {
         $token = $request->user()
             ->tokens()
