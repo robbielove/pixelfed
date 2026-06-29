@@ -69,7 +69,12 @@
                                     </span>
                                 </td>
 
-                                <td style="vertical-align: middle;" class="text-right">
+                                <td class="d-flex">
+                                    <a class="btn btn-warning btn-sm" style="font-weight: bold;" @click="renew(token)">
+                                        Renew
+                                    </a>
+
+                                    <span class="mx-1"></span>
                                     <a class="btn btn-danger btn-sm" style="font-weight: bold;" @click="revoke(token)">
                                         Delete
                                     </a>
@@ -299,14 +304,49 @@
             },
 
             revoke(token) {
-                if (! window.confirm('Delete this token? Any applications using it will stop working immediately.')) {
-                    return;
-                }
+                swal({
+                    title: 'Confirm token deletion',
+                    text: 'Are you sure you want to delete this token? Any applications using it will stop working immediately.',
+                    icon: "warning",
+                    dangerMode: true,
+                    buttons: true,
+                })
+                .then((val) => {
+                    if (val) {
+                        axios.delete('/oauth/personal-access-tokens/' + token.id)
+                            .then(() => {
+                                this.getTokens();
+                            });
+                    }
+                });
+            },
 
-                axios.delete('/oauth/personal-access-tokens/' + token.id)
-                        .then(() => {
-                            this.getTokens();
-                        });
+            renew(token) {
+                swal({
+                    title: 'Confirm token renewal',
+                    text: 'Are you sure you want to renew this token? Any applications using it will stop working immediately, a new token will be generated and only shown once.',
+                    icon: "warning",
+                    dangerMode: true,
+                    buttons: true
+                })
+                .then((val) => {
+                    if (val) {
+                        this.accessToken = null;
+
+                        axios.post('/oauth/personal-access-tokens/' + token.id + '/renew')
+                            .then(response => {
+                                this.tokens = this.tokens
+                                    .filter(t => t.id !== response.data.renewedTokenId);
+
+                                this.tokens.push(response.data.token);
+
+                                this.showAccessToken(response.data.accessToken);
+                            })
+                            .catch(error => {
+                                alert('Unable to renew this token. Please try again.');
+                            });
+                    }
+                });
             },
 
             formatDate(value) {
