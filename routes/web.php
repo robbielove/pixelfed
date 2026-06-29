@@ -54,6 +54,7 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
     Route::group([
         'as' => 'passport.',
         'prefix' => 'oauth',
+        'middleware' => ['oauth-web'],
     ], function () {
         Route::post('/token', [
             'uses' => '\App\Http\Controllers\OAuth\ApiTokenController@issueToken',
@@ -64,10 +65,10 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
         Route::get('/authorize', [
             'uses' => '\Laravel\Passport\Http\Controllers\AuthorizationController@authorize',
             'as' => 'authorizations.authorize',
-            'middleware' => ['web', 'throttle:10,1'],
+            'middleware' => ['throttle:10,1'],
         ]);
 
-        Route::middleware(['web', 'auth:web', 'validemail'])->group(function () {
+        Route::middleware(['auth:web', 'validemail'])->group(function () {
             Route::post('/token/refresh', [
                 'uses' => '\Laravel\Passport\Http\Controllers\TransientTokenController@refresh',
                 'as' => 'token.refresh',
@@ -126,14 +127,18 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
             Route::post('/personal-access-tokens', [
                 'uses' => 'PersonalAccessTokenController@store',
                 'as' => 'personal.tokens.store',
-            ]);
+            ])->middleware(['throttle:oauth-pat']);
+
+            Route::post('/personal-access-tokens/{token_id}/renew', [
+                'uses' => 'PersonalAccessTokenController@renew',
+                'as' => 'personal.tokens.renew',
+            ])->middleware(['throttle:oauth-pat']);
 
             Route::delete('/personal-access-tokens/{token_id}', [
                 'uses' => 'PersonalAccessTokenController@destroy',
                 'as' => 'personal.tokens.destroy',
             ]);
         });
-
     });
 
     Route::get('discover', 'DiscoverController@home')->name('discover');

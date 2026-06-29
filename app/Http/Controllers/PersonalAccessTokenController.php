@@ -78,6 +78,34 @@ class PersonalAccessTokenController extends Controller
         ]);
     }
 
+    public function renew(Request $request, string $token_id): JsonResponse
+    {
+        $oldToken = $request->user()
+            ->tokens()
+            ->with('client')
+            ->whereKey($token_id)
+            ->firstOrFail();
+
+        abort_unless($this->isPersonalAccessToken($oldToken), 404);
+
+        abort_if($oldToken->revoked, 422, 'This token has already been revoked.');
+
+        $scopes = array_values(array_unique($oldToken->scopes ?? []));
+
+        $result = $request->user()->createToken(
+            $oldToken->name,
+            $scopes
+        );
+
+        $oldToken->revoke();
+
+        return response()->json([
+            'accessToken' => $result->accessToken,
+            'token' => $this->serializeToken($result->token),
+            'renewedTokenId' => $oldToken->id,
+        ]);
+    }
+
     public function destroy(Request $request, string $token)
     {
         $token = $request->user()
