@@ -128,13 +128,11 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
             Route::post('/personal-access-tokens', [
                 'uses' => 'PersonalAccessTokenController@store',
                 'as' => 'personal.tokens.store',
-                'middleware' => 'twofactor',
             ]);
 
             Route::delete('/personal-access-tokens/{token_id}', [
                 'uses' => 'PersonalAccessTokenController@destroy',
                 'as' => 'personal.tokens.destroy',
-                'middleware' => 'twofactor',
             ]);
         });
 
