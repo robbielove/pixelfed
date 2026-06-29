@@ -64,12 +64,10 @@ Route::domain(config('pixelfed.domain.app'))->middleware(['validemail', 'twofact
         Route::get('/authorize', [
             'uses' => '\Laravel\Passport\Http\Controllers\AuthorizationController@authorize',
             'as' => 'authorizations.authorize',
-            'middleware' => ['web', 'throttle:10,1']
+            'middleware' => ['web', 'throttle:10,1'],
         ]);
 
-        $guard = config('passport.guard', null);
-
-        Route::middleware(['web', $guard ? 'auth:'.$guard : 'auth', 'validemail'])->group(function () {
+        Route::middleware(['web', 'auth:web', 'validemail'])->group(function () {
             Route::post('/token/refresh', [
                 'uses' => '\Laravel\Passport\Http\Controllers\TransientTokenController@refresh',
                 'as' => 'token.refresh',
